@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MQTT Device Hub & Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0f19;
+  --card-bg: rgba(23, 30, 46, 0.85);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --fg: #f1f5f9;
+  --mut: #94a3b8;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --input-bg: #1e293b;
+  --radius: 12px;
+  --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+body { margin: 0; padding: 20px; background: var(--bg); color: var(--fg); min-height: 100vh; }
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+h1 { font-size: 22px; font-weight: 700; margin: 0; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+#bar { font-size: 13px; color: var(--mut); padding: 6px 12px; background: rgba(255, 255, 255, 0.04); border-radius: 20px; border: 1px solid var(--card-border); }
+
+.card { background: var(--card-bg); backdrop-filter: blur(12px); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mut); margin-top: 14px; margin-bottom: 4px; font-weight: 600; }
+
+input { padding: 9px 12px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--input-bg); color: var(--fg); font-size: 13px; outline: none; transition: border-color 0.2s; min-width: 0; }
+input:focus { border-color: var(--accent); }
+input.num { width: 70px; }
+input.grow { flex: 1; min-width: 130px; }
+
+button { padding: 8px 14px; border: 1px solid var(--card-border); border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: var(--fg); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+button:hover { background: rgba(255, 255, 255, 0.12); transform: translateY(-1px); }
+button:active { transform: translateY(0); }
+button.pri { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.pri:hover { background: var(--accent-hover); }
+button.sec { background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: #60a5fa; }
+button.sec:hover { background: rgba(59, 130, 246, 0.25); }
+button.danger { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+button.danger:hover { background: rgba(239, 68, 68, 0.25); }
+
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; background: var(--mut); box-shadow: 0 0 8px currentColor; }
+.dot.on { background: var(--success); color: var(--success); }
+.dot.off { background: var(--danger); color: var(--danger); }
+
+.device-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--card-border); padding-bottom: 10px; margin-bottom: 8px; }
+.name { font-size: 16px; font-weight: 600; }
+.state { font-size: 12px; color: var(--mut); text-transform: capitalize; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 12px; }
+
+#log { white-space: pre-wrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.6; max-height: 250px; overflow-y: auto; margin: 0; padding: 12px; background: #070a10; border-radius: 8px; border: 1px solid var(--card-border); color: #38bdf8; }
+
+label { font-size: 12px; color: var(--mut); display: block; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Device Hub & Control Center</h1>
+  <div id="bar">Not Connected</div>
+</div>
+
+<form id="login" class="card">
+  <div class="row" style="margin-top:0">
+    <div><label>Broker Host</label><input id="host" autocomplete="off"></div>
+    <div><label>Username</label><input id="user" autocomplete="username" value="lap1"></div>
+    <div><label>Password</label><input id="pass" type="password" autocomplete="current-password"></div>
+    <div style="align-self: flex-end;"><button class="pri" type="submit">🔌 Connect Broker</button></div>
+  </div>
+</form>
+
+<div id="devices" class="grid"></div>
+<div id="empty" class="card" style="color:var(--mut); text-align: center; padding: 30px;">
+  📡 No devices connected yet. Launch an agent script (`agent.py`) to see active devices here.
+</div>
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+    <label style="margin:0; font-weight:600; color:var(--fg);">Activity Stream</label>
+    <button onclick="$('log').textContent=''" style="padding: 4px 8px; font-size: 11px;">Clear Log</button>
+  </div>
+  <pre id="log"></pre>
+</div>
+
+<script src="mqtt.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let client = null;
+const devices = {};   // name -> {online}
+const cards = {};     // name -> {el, dot, state}
+
+$('host').value = location.hostname || '100.80.220.22';
+
+function setBar(text){ $('bar').textContent = text; }
+
+function log(line){
+  const el = $('log');
+  const timestamp = new Date().toLocaleTimeString();
+  el.textContent = `[${timestamp}] ${line}\n` + el.textContent.slice(0, 6000);
+}
+
+$('login').addEventListener('submit', e => {
+  e.preventDefault();
+  connect($('host').value.trim(), $('user').value.trim(), $('pass').value);
+});
+
+function connect(host, user, pass){
+  if (client) client.end(true);
+  if (typeof mqtt === 'undefined'){ setBar('mqtt.min.js missing next to index.html'); return; }
+  setBar('Connecting...');
+  client = mqtt.connect('ws://' + host + ':9001', {
+    username: user,
+    password: pass,
+    clientId: 'ui-' + Math.random().toString(16).slice(2, 8),
+    reconnectPeriod: 2000
+  });
+  client.on('connect', () => {
+    setBar('Connected as ' + user);
+    client.subscribe(['devices/+/status', 'devices/+/reply', 'devices/+/screen']);
+  });
+  client.on('close', () => setBar('Disconnected'));
+  client.on('error', err => {
+    setBar('Error: ' + err.message);
+    if (/not authori[sz]ed|bad user/i.test(err.message)) client.end(true);
+  });
+  client.on('message', (topic, payload) => {
+    const parts = topic.split('/');
+    const name = parts[1], kind = parts[2];
+    if (kind === 'status'){
+      const text = payload.toString();
+      devices[name] = { online: text === 'online' };
+      render();
+    } else if (kind === 'reply'){
+      log(name + ': ' + payload.toString());
+    } else if (kind === 'screen'){
+      const img = $(`screen-img-${name}`);
+      if (img) img.src = payload.toString();
+    }
+  });
+}
+
+function send(name, cmd){
+  if (!client || !client.connected){ log('Error: Not connected to MQTT broker'); return; }
+  client.publish('devices/' + name + '/cmd', cmd);
+  log('Sent to ' + name + ': ' + cmd);
+}
+
+function btn(label, fn, cls){
+  const b = document.createElement('button');
+  b.innerHTML = label;
+  if (cls) b.className = cls;
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function field(cls, placeholder, type="text"){
+  const i = document.createElement('input');
+  i.className = cls;
+  i.placeholder = placeholder;
+  i.type = type;
+  if (cls.includes('num')) i.inputMode = 'numeric';
+  return i;
+}
+
+function row(...els){
+  const r = document.createElement('div');
+  r.className = 'row';
+  els.forEach(e => r.appendChild(e));
+  return r;
+}
+
+function section(title){
+  const s = document.createElement('div');
+  s.className = 'section-title';
+  s.textContent = title;
+  return s;
+}
+
+function makeCard(name){
+  const el = document.createElement('div');
+  el.className = 'card';
+
+  const head = document.createElement('div');
+  head.className = 'device-header';
+  const left = document.createElement('div'); left.style.display = 'flex'; left.style.alignItems = 'center';
+  const dot = document.createElement('span'); dot.className = 'dot';
+  const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = name;
+  left.append(dot, nm);
+  const state = document.createElement('span'); state.className = 'state';
+  head.append(left, state);
+
+  const cmd = c => () => send(name, c);
+
+  // System & Power
+  const sysSection = section('System & Power');
+  const sysRow = row(
+    btn('📊 Stats', cmd('stats'), 'sec'),
+    btn('ℹ️ Status', cmd('status')),
+    btn('🏓 Ping', cmd('ping')),
+    btn('🔒 Lock Session', cmd('lock'), 'danger')
+  );
+
+  // Media Controls
+  const mediaSection = section('Media Controls');
+  const mediaRow = row(
+    btn('⏮ Prev', cmd('media prev')),
+    btn('⏯ Play/Pause', cmd('media play'), 'pri'),
+    btn('⏭ Next', cmd('media next')),
+    btn('⏹ Stop', cmd('media stop'))
+  );
+
+  // Volume Controls
+  const volSection = section('Volume & Audio');
+  const volInput = field('num', '0-100', 'number');
+  const volRow = row(
+    btn('🔇 Mute', cmd('volume mute')),
+    btn('🔉 Vol -', cmd('volume down')),
+    btn('🔊 Vol +', cmd('volume up')),
+    volInput,
+    btn('Set Vol', () => {
+      if (volInput.value !== '') send(name, 'volume ' + volInput.value);
+    })
+  );
+
+  // Screen & Capture
+  const capSection = section('Screen Mirror & Camera (Click Phone Image below to Tap)');
+  const capRow = row(
+    btn('▶️ Start Live Stream', cmd('screen on'), 'pri'),
+    btn('🔄 Refresh Screen', cmd('screen'), 'sec'),
+    btn('⏹ Stop Stream', cmd('screen off')),
+    btn('📸 Screenshot', cmd('screenshot')),
+    btn('📷 Camera Photo', cmd('camera'))
+  );
+
+  const screenContainer = document.createElement('div');
+  screenContainer.style.cssText = 'position: relative; margin-top: 10px; text-align: center; background: #000; border-radius: 10px; padding: 8px; border: 1px solid var(--card-border);';
+  
+  const screenImg = document.createElement('img');
+  screenImg.id = `screen-img-${name}`;
+  screenImg.style.cssText = 'max-width: 100%; max-height: 420px; border-radius: 6px; cursor: crosshair; display: block; margin: 0 auto; min-height: 120px; background: #111827;';
+  screenImg.alt = 'Click ▶️ Start Live Stream or 🔄 Refresh Screen to view phone screen';
+
+  const screenCaption = document.createElement('div');
+  screenCaption.style.cssText = 'font-size: 11px; color: var(--mut); margin-top: 6px; font-weight: 500;';
+  screenCaption.innerHTML = '🎯 <b>Click-to-Tap:</b> Click anywhere on the phone image above to Tap that exact point!';
+
+  screenImg.addEventListener('click', (e) => {
+    const rect = screenImg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    const pctX = clickX / rect.width;
+    const pctY = clickY / rect.height;
+    
+    const targetW = screenImg.naturalWidth || 1080;
+    const targetH = screenImg.naturalHeight || 2400;
+    
+    const realX = Math.round(pctX * targetW);
+    const realY = Math.round(pctY * targetH);
+    
+    log(`Click-to-Tap on ${name}: (${realX}, ${realY})`);
+    send(name, `tap ${realX} ${realY}`);
+    
+    setTimeout(() => send(name, 'screen'), 350);
+  });
+
+  screenContainer.append(screenImg, screenCaption);
+
+  // Phone Keys & Keyboard
+  const keysSection = section('Phone Keys & Remote Keyboard');
+  const keysRow = row(
+    btn('🏠 Home', cmd('key home')),
+    btn('◀ Back', cmd('key back')),
+    btn('▢ Recents', cmd('key recents')),
+    btn('💡 Power Screen', cmd('key power'), 'danger')
+  );
+  const keyExtraRow = row(
+    btn('⏎ Enter', cmd('key enter'), 'pri'),
+    btn('⌫ Backspace', cmd('key backspace')),
+    btn('␣ Space', cmd('key space')),
+    btn('⇥ Tab', cmd('key tab'))
+  );
+
+  // Type Text Box
+  const typeInput = field('grow', 'Type text to send to phone...');
+  const typeRow = row(
+    typeInput,
+    btn('✉️ Type & Send (Enter)', () => {
+      if (typeInput.value) {
+        send(name, 'type ' + typeInput.value);
+        setTimeout(() => send(name, 'key enter'), 200);
+        typeInput.value = '';
+      }
+    }, 'pri'),
+    btn('⌨️ Type Only', () => {
+      if (typeInput.value) {
+        send(name, 'type ' + typeInput.value);
+        typeInput.value = '';
+      }
+    }, 'sec')
+  );
+
+  // Screen Target Shortcuts (Chat & Search bar selection)
+  const targetSection = section('Chat & Screen Selectors');
+  const targetRow = row(
+    btn('🔍 Search Bar', cmd('target search'), 'sec'),
+    btn('💬 Top Chat 1', cmd('target chat1'), 'sec'),
+    btn('💬 Chat 2', cmd('target chat2')),
+    btn('💬 Chat 3', cmd('target chat3')),
+    btn('➕ Compose / New Chat', cmd('target compose'), 'sec'),
+    btn('🚀 Click Send Icon', cmd('target send'), 'pri')
+  );
+
+  // Messages & Speech
+  const msgSection = section('Notifications & Speech');
+  const notifInput = field('grow', 'Notification message...');
+  const notifRow = row(notifInput, btn('🔔 Notify', () => send(name, 'notify ' + (notifInput.value.trim() || 'Hello'))));
+  
+  const ttsInput = field('grow', 'Text to speak out loud...');
+  const ttsRow = row(ttsInput, btn('🗣 Speak TTS', () => send(name, 'tts ' + (ttsInput.value.trim() || 'Hello from Hub'))));
+
+  // Apps & Web
+  const appSection = section('Web & App Launcher');
+  const appQuickRow = row(
+    btn('💬 WhatsApp', cmd('app whatsapp'), 'sec'),
+    btn('▶️ YouTube', cmd('app youtube'), 'sec'),
+    btn('🌐 Chrome', cmd('app chrome'), 'sec'),
+    btn('⚙️ Settings', cmd('app settings')),
+    btn('📧 Gmail', cmd('app gmail')),
+    btn('🎵 Spotify', cmd('app spotify'))
+  );
+
+  const urlInput = field('grow', 'https://example.com');
+  const urlRow = row(urlInput, btn('🔗 Open URL', () => {
+    if (urlInput.value.trim()) send(name, 'openurl ' + urlInput.value.trim());
+  }));
+
+  const appInput = field('grow', 'App or package name (e.g. whatsapp, instagram)...');
+  const appRow = row(appInput, btn('🚀 Launch Custom App', () => {
+    if (appInput.value.trim()) send(name, 'app ' + appInput.value.trim());
+  }));
+
+  // Touch & Coordinates
+  const touchSection = section('Touch & Gesture Control');
+  const x = field('num', 'X'), y = field('num', 'Y');
+  const touchRow = row(x, y, btn('👇 Tap Coords', () => {
+    const xi = Number(x.value), yi = Number(y.value);
+    if (!Number.isInteger(xi) || !Number.isInteger(yi) || xi < 0 || yi < 0){ log('Error: Tap requires valid X Y coordinates'); return; }
+    send(name, 'tap ' + xi + ' ' + yi);
+  }));
+
+  const swipeRow = row(
+    btn('⬆ Swipe Up', cmd('swipe up')),
+    btn('⬇ Swipe Down', cmd('swipe down')),
+    btn('⬅ Swipe Left', cmd('swipe left')),
+    btn('➔ Swipe Right', cmd('swipe right'))
+  );
+
+  el.append(
+    head,
+    sysSection, sysRow,
+    mediaSection, mediaRow,
+    volSection, volRow,
+    capSection, capRow, screenContainer,
+    keysSection, keysRow, keyExtraRow, typeRow,
+    targetSection, targetRow,
+    msgSection, notifRow, ttsRow,
+    appSection, appQuickRow, urlRow, appRow,
+    touchSection, touchRow, swipeRow
+  );
+  return { el, dot, state };
+}
+
+function render(){
+  Object.keys(devices).sort().forEach(name => {
+    if (!cards[name]){
+      cards[name] = makeCard(name);
+      $('devices').appendChild(cards[name].el);
+    }
+    const on = devices[name].online;
+    cards[name].dot.className = 'dot ' + (on ? 'on' : 'off');
+    cards[name].state.textContent = on ? 'online' : 'offline';
+  });
+  $('empty').hidden = Object.keys(devices).length > 0;
+}
+</script>
+</body>
+</html>
