@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MQTT Device Hub & Control Center</title>
+<title>MQTT Device Hub & Telemetry Control Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root {
   --bg: #0b0f19;
@@ -37,8 +38,8 @@ h1 { font-size: 22px; font-weight: 700; margin: 0; background: linear-gradient(1
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
 .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mut); margin-top: 14px; margin-bottom: 4px; font-weight: 600; }
 
-input { padding: 9px 12px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--input-bg); color: var(--fg); font-size: 13px; outline: none; transition: border-color 0.2s; min-width: 0; }
-input:focus { border-color: var(--accent); }
+input, select { padding: 9px 12px; border: 1px solid var(--card-border); border-radius: 8px; background: var(--input-bg); color: var(--fg); font-size: 13px; outline: none; transition: border-color 0.2s; min-width: 0; }
+input:focus, select:focus { border-color: var(--accent); }
 input.num { width: 70px; }
 input.grow { flex: 1; min-width: 130px; }
 
@@ -62,13 +63,20 @@ button.danger:hover { background: rgba(239, 68, 68, 0.25); }
 
 #log { white-space: pre-wrap; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; line-height: 1.6; max-height: 250px; overflow-y: auto; margin: 0; padding: 12px; background: #070a10; border-radius: 8px; border: 1px solid var(--card-border); color: #38bdf8; }
 
-label { font-size: 12px; color: var(--mut); display: block; margin-bottom: 4px; }
+/* ESP32 Telemetry Grid & Badges */
+.telemetry-badges { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 12px; margin-bottom: 16px; }
+.badge-card { background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); border-radius: 10px; padding: 12px; text-align: center; }
+.badge-val { font-size: 20px; font-weight: 700; color: #38bdf8; margin-top: 4px; }
+.badge-label { font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; margin-top: 12px; }
+.chart-container { background: rgba(15, 23, 42, 0.5); border: 1px solid var(--card-border); border-radius: 10px; padding: 12px; height: 260px; position: relative; }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>Device Hub & Control Center</h1>
+  <h1>Device Hub & Telemetry Control Center</h1>
   <div id="bar">Not Connected</div>
 </div>
 
@@ -81,9 +89,44 @@ label { font-size: 12px; color: var(--mut); display: block; margin-bottom: 4px; 
   </div>
 </form>
 
+<!-- ESP32 Telemetry & Database Analytics Section -->
+<div class="card" id="esp32-telemetry-card">
+  <div class="device-header">
+    <div style="display:flex; align-items:center;">
+      <span class="dot on" id="esp32-dot"></span>
+      <span class="name">⚡ ESP32 Live Telemetry & SQLite Database Analytics</span>
+    </div>
+    <div class="row" style="margin-top:0;">
+      <button class="sec" onclick="send('esp32_node1', 'led on')">💡 LED ON</button>
+      <button class="sec" onclick="send('esp32_node1', 'led off')">💡 LED OFF</button>
+      <select id="hist-limit">
+        <option value="30" selected>Last 30 rows</option>
+        <option value="50">Last 50 rows</option>
+        <option value="100">Last 100 rows</option>
+      </select>
+      <button class="pri" onclick="fetchHistory()">💾 Fetch SQLite History</button>
+    </div>
+  </div>
+
+  <div class="telemetry-badges">
+    <div class="badge-card"><div class="badge-label">🌡️ Temperature</div><div class="badge-val" id="val-temp">-- °C</div></div>
+    <div class="badge-card"><div class="badge-label">💧 Humidity</div><div class="badge-val" id="val-hum">-- %</div></div>
+    <div class="badge-card"><div class="badge-label">🔋 Voltage</div><div class="badge-val" id="val-volt">-- V</div></div>
+    <div class="badge-card"><div class="badge-label">📶 Wi-Fi Signal</div><div class="badge-val" id="val-rssi">-- dBm</div></div>
+    <div class="badge-card"><div class="badge-label">🧠 Free Heap</div><div class="badge-val" id="val-heap">-- KB</div></div>
+    <div class="badge-card"><div class="badge-label">⏱️ Uptime</div><div class="badge-val" id="val-uptime">-- s</div></div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-container"><canvas id="chartTempHum"></canvas></div>
+    <div class="chart-container"><canvas id="chartRssiVolt"></canvas></div>
+    <div class="chart-container"><canvas id="chartHeapUptime"></canvas></div>
+  </div>
+</div>
+
 <div id="devices" class="grid"></div>
 <div id="empty" class="card" style="color:var(--mut); text-align: center; padding: 30px;">
-  📡 No devices connected yet. Launch an agent script (`agent.py`) to see active devices here.
+  📡 No laptop or smartphone devices connected yet. Launch an agent script (`agent.py`) to control devices here.
 </div>
 
 <div class="card">
@@ -101,7 +144,7 @@ let client = null;
 const devices = {};   // name -> {online}
 const cards = {};     // name -> {el, dot, state}
 
-$('host').value = location.hostname || '100.80.220.22';
+$('host').value = location.hostname || '192.168.1.82';
 
 function setBar(text){ $('bar').textContent = text; }
 
@@ -110,6 +153,76 @@ function log(line){
   const timestamp = new Date().toLocaleTimeString();
   el.textContent = `[${timestamp}] ${line}\n` + el.textContent.slice(0, 6000);
 }
+
+// Global Charts
+let chartTempHum, chartRssiVolt, chartHeapUptime;
+
+function initCharts() {
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+
+  const ctx1 = $('chartTempHum').getContext('2d');
+  chartTempHum = new Chart(ctx1, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Temperature (°C)', data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', tension: 0.3, yAxisID: 'y' },
+        { label: 'Humidity (%)', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.3, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { type: 'linear', position: 'left', title: { display: true, text: 'Temp (°C)' } },
+        y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Hum (%)' } }
+      }
+    }
+  });
+
+  const ctx2 = $('chartRssiVolt').getContext('2d');
+  chartRssiVolt = new Chart(ctx2, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Wi-Fi RSSI (dBm)', data: [], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', tension: 0.3, yAxisID: 'y' },
+        { label: 'Voltage (V)', data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', tension: 0.3, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { type: 'linear', position: 'left', title: { display: true, text: 'RSSI (dBm)' } },
+        y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Voltage (V)' } }
+      }
+    }
+  });
+
+  const ctx3 = $('chartHeapUptime').getContext('2d');
+  chartHeapUptime = new Chart(ctx3, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Free Heap (KB)', data: [], borderColor: '#a78bfa', backgroundColor: 'rgba(167, 139, 250, 0.1)', tension: 0.3, fill: true }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { title: { display: true, text: 'Heap (KB)' } }
+      }
+    }
+  });
+}
+
+window.addEventListener('DOMContentLoaded', initCharts);
 
 $('login').addEventListener('submit', e => {
   e.preventDefault();
@@ -128,7 +241,9 @@ function connect(host, user, pass){
   });
   client.on('connect', () => {
     setBar('Connected as ' + user);
-    client.subscribe(['devices/+/status', 'devices/+/reply', 'devices/+/screen']);
+    client.subscribe(['devices/+/status', 'devices/+/reply', 'devices/+/screen', 'telemetry/+/data', 'telemetry/history/response']);
+    log('Broker Connected. Subscribed to telemetry and device status.');
+    setTimeout(fetchHistory, 500);
   });
   client.on('close', () => setBar('Disconnected'));
   client.on('error', err => {
@@ -138,6 +253,17 @@ function connect(host, user, pass){
   client.on('message', (topic, payload) => {
     const parts = topic.split('/');
     const name = parts[1], kind = parts[2];
+
+    if (topic === 'telemetry/history/response'){
+      handleHistoryResponse(payload.toString());
+      return;
+    }
+
+    if (topic.startsWith('telemetry/') && topic.endsWith('/data')){
+      handleLiveTelemetry(name, payload.toString());
+      return;
+    }
+
     if (kind === 'status'){
       const text = payload.toString();
       devices[name] = { online: text === 'online' };
@@ -149,6 +275,85 @@ function connect(host, user, pass){
       if (img) img.src = payload.toString();
     }
   });
+}
+
+function handleLiveTelemetry(devName, jsonStr){
+  try {
+    const d = JSON.parse(jsonStr);
+    const timeLabel = new Date().toLocaleTimeString();
+
+    if (d.temperature !== undefined) $('val-temp').textContent = d.temperature + ' °C';
+    if (d.humidity !== undefined) $('val-hum').textContent = d.humidity + ' %';
+    if (d.voltage !== undefined) $('val-volt').textContent = d.voltage + ' V';
+    if (d.rssi !== undefined) $('val-rssi').textContent = d.rssi + ' dBm';
+    if (d.free_heap !== undefined) $('val-heap').textContent = Math.round(d.free_heap / 1024) + ' KB';
+    if (d.uptime !== undefined) $('val-uptime').textContent = d.uptime + ' s';
+
+    pushChartData(chartTempHum, timeLabel, [d.temperature, d.humidity]);
+    pushChartData(chartRssiVolt, timeLabel, [d.rssi, d.voltage]);
+    pushChartData(chartHeapUptime, timeLabel, [Math.round(d.free_heap / 1024)]);
+
+    log(`[Telemetry ${d.device_id || devName}] Temp:${d.temperature}°C, Hum:${d.humidity}%, RSSI:${d.rssi}dBm`);
+  } catch (e) {
+    console.error('Failed to parse telemetry JSON:', e);
+  }
+}
+
+function pushChartData(chart, label, values) {
+  if (chart.data.labels.length >= 30) {
+    chart.data.labels.shift();
+    chart.data.datasets.forEach(ds => ds.data.shift());
+  }
+  chart.data.labels.push(label);
+  values.forEach((v, idx) => {
+    if (chart.data.datasets[idx]) chart.data.datasets[idx].data.push(v);
+  });
+  chart.update('none');
+}
+
+function fetchHistory(){
+  if (!client || !client.connected){ log('Error: Connect MQTT broker first'); return; }
+  const limit = $('hist-limit').value || 30;
+  log(`Requesting last ${limit} telemetry entries from SQLite...`);
+  client.publish('telemetry/query', JSON.stringify({ action: 'get_history', limit: limit }));
+}
+
+function handleHistoryResponse(jsonStr){
+  try {
+    const res = JSON.parse(jsonStr);
+    if (res.status !== 'success' || !res.records) return;
+    
+    log(`Loaded ${res.count} historical telemetry records from SQLite DB.`);
+    
+    const labels = [];
+    const temps = [], hums = [], rssis = [], volts = [], heaps = [];
+    
+    res.records.forEach(r => {
+      const tStr = r.timestamp ? r.timestamp.split(' ')[1] : '';
+      labels.push(tStr || r.id);
+      temps.push(r.temperature);
+      hums.push(r.humidity);
+      rssis.push(r.rssi);
+      volts.push(r.voltage);
+      heaps.push(Math.round((r.free_heap || 0) / 1024));
+    });
+
+    chartTempHum.data.labels = labels;
+    chartTempHum.data.datasets[0].data = temps;
+    chartTempHum.data.datasets[1].data = hums;
+    chartTempHum.update();
+
+    chartRssiVolt.data.labels = labels;
+    chartRssiVolt.data.datasets[0].data = rssis;
+    chartRssiVolt.data.datasets[1].data = volts;
+    chartRssiVolt.update();
+
+    chartHeapUptime.data.labels = labels;
+    chartHeapUptime.data.datasets[0].data = heaps;
+    chartHeapUptime.update();
+  } catch (e) {
+    console.error('Failed to parse history response:', e);
+  }
 }
 
 function send(name, cmd){
@@ -313,7 +518,7 @@ function makeCard(name){
     }, 'sec')
   );
 
-  // Screen Target Shortcuts (Chat & Search bar selection)
+  // Screen Target Shortcuts
   const targetSection = section('Chat & Screen Selectors');
   const targetRow = row(
     btn('🔍 Search Bar', cmd('target search'), 'sec'),
