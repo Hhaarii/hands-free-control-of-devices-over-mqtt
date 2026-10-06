@@ -144,7 +144,8 @@ let client = null;
 const devices = {};   // name -> {online}
 const cards = {};     // name -> {el, dot, state}
 
-$('host').value = location.hostname || '192.168.1.82';
+$('host').value = location.hostname || 'localhost';
+if (!$('pass').value) $('pass').value = 'HARI@MQTT';
 
 function setBar(text){ $('bar').textContent = text; }
 
