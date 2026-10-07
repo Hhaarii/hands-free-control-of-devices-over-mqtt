@@ -1,62 +1,78 @@
 /*
   ESP32 MQTT Telemetry & Remote Control Firmware
   Project: Hands-Free Device Control Over MQTT
-  Author: Antigravity Agent
+  Hardware Setup:
+  - DHT11 Sensor: VCC -> 3.3V, GND -> GND, Data Out -> GPIO 15 (D15)
   
-  Dependencies (Install via Arduino Library Manager):
+  Dependencies (Installed in ~/Arduino/libraries):
   - PubSubClient (by Nick O'Leary)
-  - ArduinoJson (by Benoit Blanchon, v6 or v7)
+  - ArduinoJson (by Benoit Blanchon)
+  - DHT sensor library (by Adafruit)
+  - Adafruit Unified Sensor (by Adafruit)
 */
 
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include "DHT.h"
 
-// ======================= CONFIGURATION =======================
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+// ======================= HARDWARE PIN CONFIG =======================
+#define DHTPIN 15       // Digital Out pin connected to GPIO 15 (D15)
+#define DHTTYPE DHT11   // DHT 11
+const int LED_PIN = 2;  // Built-in LED on ESP32 board
+// ===================================================================
 
-const char* MQTT_SERVER   = "192.168.1.82"; // Laptop Mosquitto Broker IP
+// ======================= NETWORK CONFIGURATION =======================
+const char* WIFI_SSID     = "SMEC_R&D-4G"; // Update to your Wi-Fi SSID
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD"; // Update to your Wi-Fi Password
+
+const char* MQTT_SERVER   = "192.168.1.119"; // Laptop Mosquitto Broker IP (or 192.168.1.82)
 const int   MQTT_PORT     = 1883;
 const char* MQTT_USER     = "lap1";
 const char* MQTT_PASS     = "HARI@MQTT";
 
-const char* DEVICE_ID     = "esp32_node1";
+const char* DEVICE_ID       = "esp32_node1";
 const char* TELEMETRY_TOPIC = "telemetry/esp32_node1/data";
 const char* COMMAND_TOPIC   = "devices/esp32_node1/cmd";
 const char* STATUS_TOPIC    = "devices/esp32_node1/status";
 const char* REPLY_TOPIC     = "devices/esp32_node1/reply";
 
-const int LED_PIN = 2; // Built-in LED on most ESP32 boards
-const unsigned long TELEMETRY_INTERVAL_MS = 3000; // Publish every 3s
-// =============================================================
+const unsigned long TELEMETRY_INTERVAL_MS = 2000; // Publish every 2 seconds
+// =====================================================================
 
+DHT dht(DHTPIN, DHTTYPE);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
-unsigned long lastTelemetryTime = 0;
 
-// Simulated or analog sensor reading functions
+unsigned long lastTelemetryTime = 0;
+float lastValidTemp = 25.0;
+float lastValidHum = 50.0;
+
+// Read real-time Temperature from DHT11 on GPIO 15
 float readTemperature() {
-  // Replace with actual sensor reading e.g. dht.readTemperature()
-  static float temp = 25.0;
-  temp += ((random(-50, 50)) / 100.0);
-  if (temp < 15.0) temp = 15.0;
-  if (temp > 40.0) temp = 40.0;
-  return temp;
+  float t = dht.readTemperature(); // Read temp in Celsius
+  if (isnan(t)) {
+    Serial.println("[DHT11 Warning] Failed to read temperature! Using last valid value.");
+    return lastValidTemp;
+  }
+  lastValidTemp = t;
+  return t;
 }
 
+// Read real-time Humidity from DHT11 on GPIO 15
 float readHumidity() {
-  // Replace with actual sensor reading e.g. dht.readHumidity()
-  static float hum = 50.0;
-  hum += ((random(-100, 100)) / 100.0);
-  if (hum < 20.0) hum = 20.0;
-  if (hum > 90.0) hum = 90.0;
-  return hum;
+  float h = dht.readHumidity(); // Read humidity in %
+  if (isnan(h)) {
+    Serial.println("[DHT11 Warning] Failed to read humidity! Using last valid value.");
+    return lastValidHum;
+  }
+  lastValidHum = h;
+  return h;
 }
 
 float readVoltage() {
-  // Replace with battery / analog pin reading e.g. (analogRead(34) / 4095.0) * 3.3 * 2.0
-  return 3.20 + (random(0, 20) / 100.0);
+  // Approximate supply voltage or ADC battery reading
+  return 3.30;
 }
 
 void setupWiFi() {
@@ -73,7 +89,7 @@ void setupWiFi() {
   }
 
   Serial.println("\nWi-Fi Connected!");
-  Serial.print("IP Address: ");
+  Serial.print("ESP32 IP Address: ");
   Serial.println(WiFi.localIP());
 }
 
@@ -101,8 +117,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
     mqttClient.publish(REPLY_TOPIC, "pong from ESP32");
   } 
   else if (message.equalsIgnoreCase("status") || message.equalsIgnoreCase("stats")) {
-    String reply = "ESP32 Node | IP: " + WiFi.localIP().toString() + 
-                   " | Heap: " + String(ESP.getFreeHeap()) + " B" +
+    String reply = "ESP32 DHT11 Node | IP: " + WiFi.localIP().toString() + 
+                   " | Temp: " + String(lastValidTemp) + "C" +
+                   " | Hum: " + String(lastValidHum) + "%" +
                    " | RSSI: " + String(WiFi.RSSI()) + " dBm";
     mqttClient.publish(REPLY_TOPIC, reply.c_str());
   } 
@@ -120,7 +137,7 @@ void reconnectMQTT() {
       Serial.println("Connected to Mosquitto Broker!");
       mqttClient.publish(STATUS_TOPIC, "online", true);
       mqttClient.subscribe(COMMAND_TOPIC);
-      mqttClient.publish(REPLY_TOPIC, "ESP32 telemetry node online");
+      mqttClient.publish(REPLY_TOPIC, "ESP32 DHT11 telemetry node online");
     } else {
       Serial.print("failed, rc=");
       Serial.print(mqttClient.state());
@@ -151,7 +168,7 @@ void sendTelemetry() {
   serializeJson(doc, jsonBuffer);
 
   mqttClient.publish(TELEMETRY_TOPIC, jsonBuffer);
-  Serial.print("Published telemetry: ");
+  Serial.print("Published DHT11 Telemetry: ");
   Serial.println(jsonBuffer);
 }
 
@@ -159,6 +176,10 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   Serial.begin(115200);
+
+  // Initialize DHT11 sensor on GPIO 15
+  dht.begin();
+  Serial.println("DHT11 Sensor Initialized on GPIO 15 (Pin D15)");
 
   setupWiFi();
 
