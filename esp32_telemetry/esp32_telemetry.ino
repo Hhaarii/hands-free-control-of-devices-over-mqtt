@@ -24,7 +24,7 @@ const int LED_PIN = 2;  // Built-in LED on ESP32 board
 
 // ======================= NETWORK CONFIGURATION =======================
 const char* WIFI_SSID     = "SMEC_R&D-4G"; // Update to your Wi-Fi SSID
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD"; // Update to your Wi-Fi Password
+const char* WIFI_PASSWORD = "smec_r&d@7714"; // Update to your Wi-Fi Password
 
 const char* MQTT_SERVER   = "192.168.1.119"; // Laptop Mosquitto Broker IP (or 192.168.1.82)
 const int   MQTT_PORT     = 1883;
