@@ -7,3 +7,12 @@ logs/
 __pycache__/
 *.pyc
 *.db
+
+# Python virtual environments
+yolo-env/
+venv/
+env/
+
+# YOLO / ML model weights & task binaries (large binary files)
+*.pt
+*.task
